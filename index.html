@@ -2,19 +2,28 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graph Editor</title>
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('graph-editor-theme');
+                if (t !== 'dark' && t !== 'light') t = 'light';
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+        })();
+    </script>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js"></script>
 </head>
 <body>
-    <div class="sidebar">
+    <aside class="sidebar">
         <h2>Graph Editor</h2>
-        
         <details class="gen-box" open>
             <summary>生成数据</summary>
             <div class="gen-content">
                 <div class="form-group">
-                    <label>结构类型</label>
+                    <label for="graphStructure">结构类型</label>
                     <select id="graphStructure">
                         <option value="tree">随机树 (Tree)</option>
                         <option value="chain">链表 (Chain)</option>
@@ -25,73 +34,121 @@
                         <option value="graph">普通图 (Graph)</option>
                     </select>
                 </div>
-                <div class="form-group"><label>节点数 (N)</label><input type="number" id="n" value="15" min="1" max="300"></div>
-                <div class="form-group"><label>边数 (M)</label><input type="number" id="m" value="20" min="0"></div>
-                <div class="form-group"><label>有向图</label><select id="isDirected"><option value="false">无向 (Undirected)</option><option value="true">有向 (Directed)</option></select></div>
-                <div class="form-group"><label>边权</label><select id="isWeighted"><option value="false">无权 (Unweighted)</option><option value="true">有权 (Weighted)</option></select></div>
-                <div class="form-group"><label>最大边权</label><input type="number" id="maxw" value="10" min="1" disabled></div>
+                <div class="form-group"><label for="n">节点数 (N)</label><input type="number" id="n" value="15" min="1" max="300"></div>
+                <div class="form-group"><label for="m">边数 (M)</label><input type="number" id="m" value="20" min="0"></div>
+                <small id="mHint" class="input-hint" aria-live="polite"></small>
+                <div class="form-group"><label for="isDirected">有向图</label><select id="isDirected"><option value="false">无向</option><option value="true">有向</option></select></div>
+                <div class="form-group"><label for="isWeighted">边权</label><select id="isWeighted"><option value="false">无权</option><option value="true">有权</option></select></div>
+                <div class="form-group"><label for="maxw">最大边权</label><input type="number" id="maxw" value="10" min="1" disabled></div>
                 <button class="btn btn-primary" id="btnGenerate" onclick="generateData()">生成数据</button>
             </div>
         </details>
 
-        <!-- ====== 导出图片功能 (移到了左侧) ====== -->
-        <div style="display: flex; gap: 10px;">
-            <button class="btn" style="flex: 1; text-align: center;" onclick="exportImage('png')" title="导出带有透明背景的 PNG 图片">导出 PNG</button>
-            <button class="btn" style="flex: 1; text-align: center;" onclick="exportImage('jpeg')" title="导出带有白色背景的 JPG 图片">导出 JPG</button>
+        <div class="export-row">
+            <button class="btn btn-export" type="button" onclick="exportImage('png')" title="导出为 PNG 图片">导出 PNG</button>
+            <button class="btn btn-export" type="button" onclick="exportImage('jpeg')" title="导出为 JPG 图片">导出 JPG</button>
         </div>
-        <!-- ===================================== -->
 
         <div class="output-container">
-            <textarea id="output" placeholder="支持任意字符串，如：&#10;A B 10&#10;苹果 香蕉&#10;孤立节点" oninput="renderGraphFromText()"></textarea>
+            <textarea id="output" placeholder="支持任意字符串，如：&#10;A B 10&#10;苹果 香蕉&#10;孤立节点&#10;&#10;Ctrl+Z 撤销 · Ctrl+Y 重做" title="仅撤销/重做此数据框中的手动编辑：Ctrl+Z 撤销，Ctrl+Y 重做" oninput="renderGraphFromText()"></textarea>
             <button class="btn btn-copy" onclick="copyOutput()">复制</button><span id="copyFeedback" class="feedback">已复制！</span>
         </div>
-    </div>
-    
-    <div class="main-content">
+    </aside>
+
+    <main class="main-content">
         <div class="toolbar" id="topToolbar">
-            <div class="tool-group"><label>节点大小:</label><input type="range" id="nodeSize" value="20" min="10" max="50" onchange="updateNodeSize(this.value)"></div>
-            <div class="tool-group"><label>边长(弹簧):</label><input type="range" id="edgeLength" value="100" min="30" max="300" onchange="updateEdgeLength(this.value)"></div>
+            <div class="tool-group"><label for="nodeSize">节点大小:</label><input type="range" id="nodeSize" value="20" min="10" max="50" onchange="updateNodeSize(this.value)"></div>
+            <div class="tool-group"><label for="edgeLength">边长:</label><input type="range" id="edgeLength" value="40" min="20" max="120" oninput="updateEdgeLength(this.value)"></div>
             <div class="divider"></div>
             <button class="btn" onclick="pinAll()">固定所有</button>
             <button class="btn" onclick="unpinAll()">全部解除</button>
             <div class="divider"></div>
-            
+
             <div class="layout-box" id="treeLayoutBox" style="display:none;">
                 <button class="btn-layout" onclick="formatAsTree()">树</button>
                 <div class="layout-input-wrapper"><span class="layout-label">根:</span><input type="text" id="treeRootInput" class="layout-input" value="1" title="设置树的根节点"></div>
             </div>
-            
             <button class="btn-layout-standalone" id="cactusLayoutBox" style="display:none;" onclick="formatAsCactus()">仙人掌</button>
             <button class="btn-layout-standalone" id="bipartiteLayoutBtn" style="display:none;" onclick="formatAsBipartite()">二分图</button>
-            
-            <!-- 圆方树触发按钮 -->
             <button class="btn-layout-standalone" id="bcTreeBtn" style="display:none;" onclick="toggleBCTreeMode()">圆方树</button>
-            
-            <!-- 圆方树专属排版组件（根节点选择） -->
+
             <div class="layout-box" id="bcTreeLayoutBox" style="display:none;">
-                <button class="btn-layout" id="bcTreeLayoutBtn" style="background-color: #2a9d8f; border-right: 1px solid #1f7a6f;" onclick="toggleBCTreeLayout()">树</button>
+                <button class="btn-layout" id="bcTreeLayoutBtn" onclick="toggleBCTreeLayout()">树</button>
                 <div class="layout-input-wrapper">
                     <span class="layout-label">根:</span>
                     <input type="text" id="bcTreeRootInput" class="layout-input" value="1" title="设置圆方树的根节点 (回车生效)" onchange="updateBCTreeLayoutRoot()" onkeydown="if(event.key==='Enter') updateBCTreeLayoutRoot()">
                 </div>
             </div>
+            <div class="toolbar-right">
+                <button class="theme-toggle" id="themeToggle" type="button" onclick="toggleTheme()" title="切换深色 / 浅色模式" aria-label="切换主题"><span id="themeIcon" aria-hidden="true">◐</span></button>
+            </div>
         </div>
         <div id="mynetwork"></div>
-    </div>
-    
-    <div id="contextMenu" class="context-menu">
-        <label>修改标签:</label><input type="text" id="nodeLabelInput" onkeydown="if(event.key==='Enter') saveNodeConfig()">
-        <label>选择颜色 (或快捷键):</label>
-        <div class="color-picker">
-            <div class="color-swatch" style="background:#e63946" onclick="selectColor('#e63946')" title="R键"></div><div class="color-swatch" style="background:#4e6ef2" onclick="selectColor('#4e6ef2')" title="B键"></div><div class="color-swatch" style="background:#2a9d8f" onclick="selectColor('#2a9d8f')" title="G键"></div><div class="color-swatch" style="background:#f4a261" onclick="selectColor('#f4a261')" title="Y键"></div><div class="color-swatch" style="background:#9d4edd" onclick="selectColor('#9d4edd')" title="P键"></div><div class="color-swatch" style="background:#333333" onclick="selectColor('#333333')" title="D键"></div>
+        <div class="map-controls" role="group" aria-label="画布视图控制">
+            <button class="map-control" type="button" onclick="zoomGraph(1.2)" title="放大" aria-label="放大">+</button>
+            <button class="map-control" type="button" onclick="zoomGraph(0.8333333333)" title="缩小" aria-label="缩小">−</button>
+            <button class="map-control map-home" type="button" onclick="zoomGraph('home')" title="适应画布" aria-label="回到主视图"><span aria-hidden="true">⌂</span></button>
         </div>
-        <input type="hidden" id="nodeColorInput"><button class="btn btn-primary" style="margin-top:8px;width:100%" onclick="saveNodeConfig()">保存 (Enter)</button>
-    </div>
-    
-    <div id="edgeContextMenu" class="context-menu">
-        <label>修改边权/标签:</label><input type="text" id="edgeLabelInput" onkeydown="if(event.key==='Enter') saveEdgeConfig()"><button class="btn btn-primary" style="margin-top:8px;width:100%" onclick="saveEdgeConfig()">保存 (Enter)</button>
-    </div>
-    
+    </main>
+
+    <aside class="editor-panel" id="editorPanel">
+        <div class="editor-head">
+            <h2 class="editor-title">编辑栏</h2>
+            <button class="editor-toggle" id="editorToggle" type="button" onclick="toggleEditorPanel()" aria-label="折叠编辑栏" title="折叠/展开编辑栏">›</button>
+        </div>
+        <div class="editor-content" id="editorContent">
+            <section class="editor-section mode-section">
+                <h3>操作模式</h3>
+                <div class="mode-switch mode-switch-editor" role="group" aria-label="画布操作模式">
+                    <button class="btn mode-btn" id="modeAddBtn" type="button" onclick="setInteractionMode('add')" aria-pressed="false" title="空白处单击新建节点，依次单击两个节点创建无权边">添加模式</button>
+                    <button class="btn mode-btn" id="modeEditBtn" type="button" onclick="setInteractionMode('edit')" aria-pressed="false" title="单击节点或边以修改属性">编辑模式</button>
+                    <button class="btn mode-btn" id="modeDeleteBtn" type="button" onclick="setInteractionMode('delete')" aria-pressed="false" title="单击节点或边即可删除">删除模式</button>
+                </div>
+            </section>
+            <p class="editor-hint" id="editorHint">单击节点可固定/解除固定；拖动节点不会切换固定状态。双击节点可直接改名。</p>
+
+            <section class="editor-section">
+                <h3>节点属性</h3>
+                <label for="editNodeSelect">选择节点</label>
+                <select id="editNodeSelect" onchange="selectNodeForEditing(this.value)"><option value="">暂无节点</option></select>
+                <label for="editNodeName">节点名称</label>
+                <input id="editNodeName" type="text" placeholder="输入节点名称" onkeydown="if(event.key==='Enter') saveEditorNode()">
+                <label for="editNodeColor">节点颜色</label>
+                <div class="color-input-row"><input id="editNodeColor" type="color" value="#000000" aria-label="节点颜色"><span id="editNodeColorText">#000000</span></div>
+                <button class="btn btn-primary" type="button" onclick="saveEditorNode()">应用节点修改</button>
+                <button class="btn btn-danger" type="button" onclick="deleteSelectedNode()">删除所选节点</button>
+            </section>
+
+            <section class="editor-section">
+                <h3>边属性</h3>
+                <label for="editEdgeSelect">选择边</label>
+                <select id="editEdgeSelect" onchange="selectEdgeForEditing(this.value)"><option value="">暂无边</option></select>
+                <label for="editEdgeLabel">边权 / 标签</label>
+                <input id="editEdgeLabel" type="text" placeholder="可留空" onkeydown="if(event.key==='Enter') saveEditorEdge()">
+                <button class="btn btn-primary" type="button" onclick="saveEditorEdge()">应用边修改</button>
+                <button class="btn btn-danger" type="button" onclick="deleteSelectedEdge()">删除所选边</button>
+            </section>
+
+            <section class="editor-section">
+                <h3>新建节点</h3>
+                <label for="newNodeName">节点名称（不能含空格）</label>
+                <input id="newNodeName" type="text" placeholder="例如：A" onkeydown="if(event.key==='Enter') addNode()">
+                <button class="btn btn-primary" type="button" onclick="addNode()">新建节点</button>
+            </section>
+
+            <section class="editor-section">
+                <h3>新建边</h3>
+                <label for="newEdgeFrom">起点</label>
+                <select id="newEdgeFrom"><option value="">暂无节点</option></select>
+                <label for="newEdgeTo">终点</label>
+                <select id="newEdgeTo"><option value="">暂无节点</option></select>
+                <label for="newEdgeLabel">边权 / 标签（可选）</label>
+                <input id="newEdgeLabel" type="text" placeholder="例如：10" onkeydown="if(event.key==='Enter') addEdge()">
+                <button class="btn btn-primary" type="button" onclick="addEdge()">新建边</button>
+            </section>
+        </div>
+    </aside>
+
     <script src="script.js"></script>
 </body>
 </html>
